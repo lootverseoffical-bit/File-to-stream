@@ -13,6 +13,9 @@
         background: radial-gradient(circle at top, #1f2937, #020617);
         color: #e5e7eb;
         user-select: none;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
     }
     .glass {
         background: rgba(255,255,255,0.06);
@@ -24,10 +27,15 @@
         border-radius: 0.75rem;
         font-weight: 600;
         transition: all 0.25s ease;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+        cursor: pointer;
     }
     .btn-primary {
         background: linear-gradient(135deg,#6366f1,#4f46e5);
         box-shadow: 0 10px 30px rgba(99,102,241,.35);
+        color: white;
     }
     .btn-primary:hover {
         transform: translateY(-2px) scale(1.03);
@@ -36,10 +44,20 @@
     .btn-secondary {
         background: rgba(255,255,255,0.08);
         border: 1px solid rgba(255,255,255,0.15);
+        color: #e5e7eb;
     }
     .btn-secondary:hover {
         background: rgba(255,255,255,0.15);
         transform: translateY(-2px);
+    }
+    .btn-danger {
+        background: linear-gradient(135deg,#ef4444,#dc2626);
+        box-shadow: 0 10px 30px rgba(239,68,68,.35);
+        color: white;
+    }
+    .btn-danger:hover {
+        transform: translateY(-2px) scale(1.03);
+        box-shadow: 0 14px 40px rgba(239,68,68,.55);
     }
     .loader {
         width: 64px;
@@ -51,10 +69,25 @@
         margin: auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .file-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+    .error-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+    .fade-in {
+        animation: fadeIn 0.5s ease-in;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 </head>
 
-<body class="min-h-screen flex flex-col">
+<body>
 
 <!-- HEADER -->
 <header class="p-6 text-center">
@@ -65,7 +98,7 @@
 </header>
 
 <!-- MAIN -->
-<main class="flex-grow flex items-center justify-center px-4">
+<main class="flex-grow flex items-center justify-center px-4 py-8">
     <div class="max-w-xl w-full glass rounded-2xl p-6 sm:p-8 text-center shadow-2xl">
 
         <!-- Loader -->
@@ -74,15 +107,34 @@
             <p class="mt-4 text-gray-400">Fetching your file securely…</p>
         </div>
 
-        <!-- Content -->
-        <div id="content-container" style="display:none">
-            <h2 id="file-name" class="text-xl sm:text-2xl font-bold break-words"></h2>
-            <p id="file-size" class="text-gray-400 mt-1 mb-6"></p>
+        <!-- Error Container -->
+        <div id="error-container" style="display:none">
+            <div class="error-icon">🔒</div>
+            <h2 class="text-xl font-bold text-red-400">Access Denied</h2>
+            <p id="error-message" class="text-gray-400 mt-2"></p>
+            <button onclick="window.location.href='/' " class="btn btn-secondary mt-6">
+                Go Home
+            </button>
+        </div>
 
-            <div id="button-container" class="flex flex-col gap-4"></div>
+        <!-- Content -->
+        <div id="content-container" style="display:none" class="fade-in">
+            <div class="file-icon" id="file-icon">📄</div>
+            <h2 id="file-name" class="text-xl sm:text-2xl font-bold break-words"></h2>
+            <div class="flex justify-center gap-4 mt-2 text-sm text-gray-400">
+                <span id="file-size">Size • --</span>
+                <span id="file-type">Type • --</span>
+            </div>
+            
+            <div class="h-px bg-gray-700 my-6"></div>
+
+            <div id="button-container" class="flex flex-col gap-3"></div>
 
             <p class="mt-6 text-xs text-gray-500">
-                Links are private & protected. Do not share publicly.
+                🔒 Links are private & protected. Do not share publicly.
+            </p>
+            <p class="mt-1 text-xs text-gray-600">
+                ⏱️ Link expires after 30 days of inactivity
             </p>
         </div>
 
@@ -95,53 +147,209 @@
 </footer>
 
 <script>
-const BASE_URL = window.location.origin;
+// Get the file ID from URL
 const FILE_ID = window.location.pathname.split("/").pop();
+const BASE_URL = window.location.origin;
+
+// DOM elements
+const loader = document.getElementById("loader-container");
+const errorContainer = document.getElementById("error-container");
+const errorMessage = document.getElementById("error-message");
+const content = document.getElementById("content-container");
+const fileNameEl = document.getElementById("file-name");
+const fileSizeEl = document.getElementById("file-size");
+const fileTypeEl = document.getElementById("file-type");
+const fileIconEl = document.getElementById("file-icon");
+const buttonContainer = document.getElementById("button-container");
+
+// Timeout for loading (10 seconds)
+const LOADING_TIMEOUT = 10000;
 
 async function fetchFileData() {
-    const loader = document.getElementById("loader-container");
-    const content = document.getElementById("content-container");
-    const fileNameEl = document.getElementById("file-name");
-    const fileSizeEl = document.getElementById("file-size");
-    const buttonContainer = document.getElementById("button-container");
-
     try {
-        const res = await fetch(`${BASE_URL}/api/file/${FILE_ID}`);
-        if (!res.ok) throw new Error();
+        // Set timeout
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Loading timeout")), LOADING_TIMEOUT);
+        });
 
-        const data = await res.json();
-        document.title = data.file_name;
+        // Fetch data with timeout
+        const fetchPromise = fetch(`${BASE_URL}/api/file/${FILE_ID}`);
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error("File not found or link expired");
+            } else if (response.status === 503) {
+                throw new Error("Server is busy, please try again later");
+            } else {
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            }
+        }
 
+        const data = await response.json();
+        
+        // Validate data
+        if (!data.file_name) {
+            throw new Error("Invalid file data received");
+        }
+
+        // Update page title
+        document.title = `${data.file_name} - Secure Access`;
+
+        // Update file details
         fileNameEl.innerText = data.file_name;
-        fileSizeEl.innerText = `Size • ${data.file_size}`;
+        fileSizeEl.innerText = `Size • ${data.file_size || 'Unknown'}`;
+        
+        // Set file type
+        const mimeType = data.mime_type || 'application/octet-stream';
+        const fileType = mimeType.split('/')[1]?.toUpperCase() || 'FILE';
+        fileTypeEl.innerText = `Type • ${fileType}`;
 
+        // Set appropriate icon
+        setFileIcon(mimeType, data.file_name);
+
+        // Build buttons
         buttonContainer.innerHTML = "";
-
+        
+        // Download button (always show)
+        const dlLink = data.direct_dl_link || `${BASE_URL}/dl/${FILE_ID}/${encodeURIComponent(data.file_name)}`;
+        
         if (data.is_media) {
-            const mx = `intent:${data.direct_dl_link}#Intent;action=android.intent.action.VIEW;type=video/*;end`;
-            const vlc = `intent:${data.direct_dl_link}#Intent;action=android.intent.action.VIEW;type=video/*;package=org.videolan.vlc;end`;
-
+            // Media file - show all options
+            const mxLink = data.mx_player_link || `intent:${dlLink}#Intent;action=android.intent.action.VIEW;type=${mimeType};end`;
+            const vlcLink = data.vlc_player_link || `intent:${dlLink}#Intent;action=android.intent.action.VIEW;type=${mimeType};package=org.videolan.vlc;end`;
+            
             buttonContainer.innerHTML = `
-                <a href="${data.direct_dl_link}" class="btn btn-primary">⬇ Download Now</a>
-                <a href="${mx}" class="btn btn-secondary">▶ Play in MX Player</a>
-                <a href="${vlc}" class="btn btn-secondary">▶ Play in VLC</a>
+                <a href="${dlLink}" class="btn btn-primary" download>
+                    ⬇ Download Now
+                </a>
+                <div class="grid grid-cols-2 gap-3">
+                    <a href="${mxLink}" class="btn btn-secondary text-sm">
+                        ▶ MX Player
+                    </a>
+                    <a href="${vlcLink}" class="btn btn-secondary text-sm">
+                        ▶ VLC
+                    </a>
+                </div>
+                <a href="${dlLink}" target="_blank" class="btn btn-secondary text-sm">
+                    ▶ Stream in Browser
+                </a>
             `;
         } else {
+            // Non-media file - only download
             buttonContainer.innerHTML = `
-                <a href="${data.direct_dl_link}" class="btn btn-primary">⬇ Download File</a>
+                <a href="${dlLink}" class="btn btn-primary" download>
+                    ⬇ Download File
+                </a>
+                <button onclick="copyLink('${dlLink}')" class="btn btn-secondary text-sm">
+                    📋 Copy Download Link
+                </button>
             `;
         }
 
+        // Show content, hide loader
         loader.style.display = "none";
         content.style.display = "block";
 
-    } catch {
-        loader.innerHTML = "<p class='text-red-400'>❌ Link expired or invalid</p>";
+    } catch (error) {
+        console.error("Error fetching file:", error);
+        
+        // Show error
+        loader.style.display = "none";
+        errorContainer.style.display = "block";
+        
+        let message = "This link may have expired or been removed.";
+        if (error.message === "Loading timeout") {
+            message = "Loading took too long. Please check your connection and try again.";
+        } else if (error.message.includes("404")) {
+            message = "The file you're looking for doesn't exist or has been removed.";
+        } else if (error.message.includes("503")) {
+            message = "Server is currently busy. Please try again in a few moments.";
+        }
+        errorMessage.innerText = message;
     }
 }
 
-fetchFileData();
+function setFileIcon(mimeType, fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const iconMap = {
+        // Images
+        'image': '🖼️',
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
+        // Videos
+        'video': '🎬',
+        'mp4': '🎬', 'mkv': '🎬', 'avi': '🎬', 'mov': '🎬', 'wmv': '🎬',
+        // Audio
+        'audio': '🎵',
+        'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵',
+        // Documents
+        'application/pdf': '📄',
+        'pdf': '📄',
+        'text': '📝',
+        'txt': '📝',
+        // Archives
+        'application/zip': '📦',
+        'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦', 'gz': '📦',
+        // Code
+        'application/javascript': '💻',
+        'js': '💻', 'py': '💻', 'java': '💻', 'cpp': '💻', 'html': '💻', 'css': '💻',
+        // Default
+        'default': '📄'
+    };
+    
+    let icon = iconMap['default'];
+    
+    // Check mime type
+    for (const [key, value] of Object.entries(iconMap)) {
+        if (mimeType.includes(key)) {
+            icon = value;
+            break;
+        }
+    }
+    
+    // Check extension if mime type didn't match
+    if (icon === iconMap['default'] && ext) {
+        for (const [key, value] of Object.entries(iconMap)) {
+            if (key === ext) {
+                icon = value;
+                break;
+            }
+        }
+    }
+    
+    fileIconEl.innerText = icon;
+}
+
+function copyLink(link) {
+    navigator.clipboard.writeText(link).then(() => {
+        // Show temporary feedback
+        const btn = event.target;
+        const originalText = btn.innerText;
+        btn.innerText = '✅ Copied!';
+        setTimeout(() => {
+            btn.innerText = originalText;
+        }, 2000);
+    }).catch(() => {
+        alert('Please copy the link manually: ' + link);
+    });
+}
+
+// Prevent right-click
 document.addEventListener("contextmenu", e => e.preventDefault());
+
+// Start loading
+fetchFileData();
+
+// Retry on network error (optional)
+let retryCount = 0;
+const maxRetries = 3;
+
+document.addEventListener('online', () => {
+    if (loader.style.display !== 'none' && retryCount < maxRetries) {
+        retryCount++;
+        fetchFileData();
+    }
+});
 </script>
 
 </body>
