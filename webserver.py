@@ -1,4 +1,4 @@
-# webserver.py (FULL, COMPLETE CODE for the main.py structure)
+# webserver.py (FULL, COMPLETE CODE with fixes)
 
 import math
 import traceback
@@ -48,11 +48,13 @@ class ByteStreamer:
 
     @staticmethod
     async def get_location(file_id: FileId):
+        # Fix: Handle missing thumbnail_size attribute
+        thumb_size = getattr(file_id, 'thumbnail_size', '')
         return raw.types.InputDocumentFileLocation(
             id=file_id.media_id,
             access_hash=file_id.access_hash,
             file_reference=file_id.file_reference,
-            thumb_size=file_id.thumbnail_size
+            thumb_size=thumb_size
         )
 
     async def yield_file(self, file_id: FileId, index: int, offset: int, first_part_cut: int, last_part_cut: int, part_count: int, chunk_size: int):
@@ -67,9 +69,13 @@ class ByteStreamer:
                 await media_session.start()
                 exported_auth = await client.invoke(raw.functions.auth.ExportAuthorization(dc_id=file_id.dc_id))
                 await media_session.invoke(raw.functions.auth.ImportAuthorization(id=exported_auth.id, bytes=exported_auth.bytes))
+                client.media_sessions[file_id.dc_id] = media_session
             else:
-                media_session = client.session
-            client.media_sessions[file_id.dc_id] = media_session
+                # Fix: Create a separate media session for the same DC to avoid sharing issues
+                auth_key = await Auth(client, file_id.dc_id, await client.storage.test_mode()).create()
+                media_session = Session(client, file_id.dc_id, auth_key, await client.storage.test_mode(), is_media=True)
+                await media_session.start()
+                client.media_sessions[file_id.dc_id] = media_session
         
         location = await self.get_location(file_id)
         current_part = 1
@@ -103,6 +109,12 @@ async def show_file_page(request: Request, unique_id: str):
         if not storage_msg_id:
             raise HTTPException(status_code=404, detail="Link expired or invalid.")
         
+        # Fix: Validate storage_msg_id is an integer
+        try:
+            storage_msg_id = int(storage_msg_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid file ID format.")
+        
         # Use the main bot (client 0) to get message details
         main_bot = multi_clients.get(0)
         if not main_bot:
@@ -116,14 +128,17 @@ async def show_file_page(request: Request, unique_id: str):
         original_file_name = media.file_name or "file"
         safe_file_name = "".join(c for c in original_file_name if c.isalnum() or c in (' ', '.', '_', '-')).rstrip()
 
+        # Fix: Ensure BASE_URL is set
+        base_url = getattr(Config, 'BASE_URL', 'http://localhost:8000')
+        
         context = {
             "request": request,
             "file_name": mask_filename(original_file_name),
             "file_size": get_readable_file_size(media.file_size),
             "is_media": (media.mime_type or "").startswith(("video/", "audio/")),
-            "direct_dl_link": f"{Config.BASE_URL}/dl/{storage_msg_id}/{safe_file_name}",
-            "mx_player_link": f"intent:{Config.BASE_URL}/dl/{storage_msg_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={media.mime_type};end",
-            "vlc_player_link": f"vlc://{Config.BASE_URL}/dl/{storage_msg_id}/{safe_file_name}"
+            "direct_dl_link": f"{base_url}/dl/{storage_msg_id}/{safe_file_name}",
+            "mx_player_link": f"intent:{base_url}/dl/{storage_msg_id}/{safe_file_name}#Intent;action=android.intent.action.VIEW;type={media.mime_type};end",
+            "vlc_player_link": f"vlc://{base_url}/dl/{storage_msg_id}/{safe_file_name}"
         }
         return templates.TemplateResponse("show.html", context)
 
