@@ -1,11 +1,10 @@
-# database.py (IMPROVED VERSION with fixes)
-
 import motor.motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError, ConnectionFailure
 from config import Config
 import asyncio
 from typing import Optional, Any
+import datetime
 
 class Database:
     def __init__(self):
@@ -33,15 +32,7 @@ class Database:
         await self.disconnect()
 
     async def connect(self, retry: bool = True) -> bool:
-        """
-        Database connection establish karta hai with retry logic.
-        
-        Args:
-            retry: Whether to retry on failure
-        
-        Returns:
-            bool: True if connection successful, False otherwise
-        """
+        """Database connection establish karta hai with retry logic."""
         if not Config.DATABASE_URL:
             print("⚠️ No DATABASE_URL provided. Running in memory-only mode.")
             self.db = None
@@ -136,16 +127,7 @@ class Database:
             return False
 
     async def save_link(self, unique_id: str, message_id: int) -> bool:
-        """
-        Save a link mapping to the database.
-        
-        Args:
-            unique_id: Unique identifier for the link
-            message_id: Telegram message ID
-            
-        Returns:
-            bool: True if saved successfully, False otherwise
-        """
+        """Save a link mapping to the database."""
         if self.collection is None:
             print("⚠️ Database not available. Link not saved.")
             return False
@@ -154,7 +136,7 @@ class Database:
             # Use update with upsert to avoid duplicate key errors
             result = await self.collection.update_one(
                 {'_id': unique_id},
-                {'$set': {'message_id': message_id, 'updated_at': self._get_timestamp()}},
+                {'$set': {'message_id': message_id, 'updated_at': datetime.datetime.utcnow()}},
                 upsert=True
             )
             
@@ -167,11 +149,10 @@ class Database:
                 
         except DuplicateKeyError:
             print(f"⚠️ Duplicate key error for {unique_id}. Updating existing entry...")
-            # If duplicate key error occurs, update the existing entry
             try:
                 result = await self.collection.update_one(
                     {'_id': unique_id},
-                    {'$set': {'message_id': message_id, 'updated_at': self._get_timestamp()}}
+                    {'$set': {'message_id': message_id, 'updated_at': datetime.datetime.utcnow()}}
                 )
                 return result.modified_count > 0
             except Exception as e:
@@ -183,15 +164,7 @@ class Database:
             return False
 
     async def get_link(self, unique_id: str) -> Optional[int]:
-        """
-        Get message_id for a given unique_id.
-        
-        Args:
-            unique_id: Unique identifier for the link
-            
-        Returns:
-            Optional[int]: Message ID if found, None otherwise
-        """
+        """Get message_id for a given unique_id."""
         if self.collection is None:
             print("⚠️ Database not available. Cannot retrieve link.")
             return None
@@ -207,15 +180,7 @@ class Database:
             return None
 
     async def delete_link(self, unique_id: str) -> bool:
-        """
-        Delete a link from the database.
-        
-        Args:
-            unique_id: Unique identifier for the link
-            
-        Returns:
-            bool: True if deleted successfully, False otherwise
-        """
+        """Delete a link from the database."""
         if self.collection is None:
             print("⚠️ Database not available. Cannot delete link.")
             return False
@@ -234,15 +199,7 @@ class Database:
             return False
 
     async def get_all_links(self, limit: int = 100) -> list:
-        """
-        Get all links from the database (for admin purposes).
-        
-        Args:
-            limit: Maximum number of links to retrieve
-            
-        Returns:
-            list: List of link documents
-        """
+        """Get all links from the database (for admin purposes)."""
         if self.collection is None:
             print("⚠️ Database not available.")
             return []
@@ -256,12 +213,7 @@ class Database:
             return []
 
     async def get_link_count(self) -> int:
-        """
-        Get total number of links in the database.
-        
-        Returns:
-            int: Number of links
-        """
+        """Get total number of links in the database."""
         if self.collection is None:
             return 0
         
@@ -271,15 +223,8 @@ class Database:
             print(f"❌ Error counting links: {e}")
             return 0
 
-    def _get_timestamp(self):
-        """Helper method to get current timestamp."""
-        import datetime
-        return datetime.datetime.utcnow()
-
     async def ensure_connection(self):
-        """
-        Ensure database connection is active, reconnect if needed.
-        """
+        """Ensure database connection is active, reconnect if needed."""
         if not await self.is_connected():
             print("🔄 Reconnecting to database...")
             await self.connect(retry=True)
