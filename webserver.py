@@ -1,5 +1,3 @@
-# webserver.py (FULL, COMPLETE CODE with fixes)
-
 import math
 import traceback
 import os
@@ -29,7 +27,8 @@ async def root():
 
 def mask_filename(name: str) -> str:
     """Obfuscates the filename to hide it in the URL/page."""
-    if not name: return "Protected File"
+    if not name: 
+        return "Protected File"
     resolutions = ["216_p", "480p", "720p", "1080p", "2160p"]
     res_part = ""
     for res in resolutions:
@@ -87,12 +86,17 @@ class ByteStreamer:
                 )
                 if isinstance(r, raw.types.upload.File):
                     chunk = r.bytes
-                    if not chunk: break
+                    if not chunk: 
+                        break
                     
-                    if part_count == 1: yield chunk[first_part_cut:last_part_cut]
-                    elif current_part == 1: yield chunk[first_part_cut:]
-                    elif current_part == part_count: yield chunk[:last_part_cut]
-                    else: yield chunk
+                    if part_count == 1: 
+                        yield chunk[first_part_cut:last_part_cut]
+                    elif current_part == 1: 
+                        yield chunk[first_part_cut:]
+                    elif current_part == part_count: 
+                        yield chunk[:last_part_cut]
+                    else: 
+                        yield chunk
                     
                     current_part += 1
                     offset += chunk_size
